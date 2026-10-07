@@ -52,8 +52,10 @@ On boot, the device checks NVS for a stored WiFi SSID. If none is found, it
 starts its own access point instead of connecting to anything:
 
 1. Power on the device. It creates a WiFi network named
-   **`HomeControl-Setup-XXXX`** (last two bytes of its AP MAC address),
-   password **`temp12345`**.
+   **`HomeControl-Setup-XXXX`** (last two bytes of its AP MAC address). The
+   AP password is currently a fixed placeholder defined in `main/ap_mode.c`
+   (see *Known limitations* below — don't rely on it for anything you care
+   about keeping private).
 2. Connect a phone or laptop to that network.
 3. Open `http://192.168.4.1` in a browser (use the browser app directly if a
    captive-portal mini-browser pops up and JavaScript doesn't run).
@@ -107,10 +109,9 @@ each one supports, is defined in [`main/html/pins.json`](main/html/pins.json).
 
 The server address is currently compiled in (`SERVER_IP`/`SERVER_PORT` in
 [`main/tcp_client.c`](main/tcp_client.c)) — update it for your deployment
-before building. The wire protocol (`Envelope`, `RegisterController`,
-`IoReport`, `Command`, etc.) is defined in
-[`main/proto/controlhome.proto`](main/proto/controlhome.proto), shared with
-the server's copy of the same schema.
+before building. See [`PROTOCOL.md`](PROTOCOL.md) for the wire format,
+message schema overview, and how to regenerate the nanopb bindings after
+changing `controlhome.proto`.
 
 ## Building and flashing
 
