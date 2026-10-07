@@ -1,0 +1,23 @@
+{
+  "pins": [
+    { "pin": 4,  "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 5,  "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 6,  "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 8,  "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 10, "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 14, "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 15, "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 16, "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 7,  "functions": ["GPIO_IN", "GPIO_OUT", "SPI_SCK"] },
+    { "pin": 9,  "functions": ["GPIO_IN", "GPIO_OUT", "SPI_MISO"] },
+    { "pin": 11, "functions": ["GPIO_IN", "GPIO_OUT", "SPI_MOSI"] },
+    { "pin": 12, "functions": ["GPIO_IN", "GPIO_OUT", "SPI_SS"] },
+    { "pin": 33, "functions": ["GPIO_IN", "GPIO_OUT", "I2C_SDA"] },
+    { "pin": 35, "functions": ["GPIO_IN", "GPIO_OUT", "I2C_SCL"] },
+    { "pin": 37, "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 39, "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 36, "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 38, "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] },
+    { "pin": 40, "functions": ["GPIO_IN", "GPIO_OUT", "RFID_RX"] }
+  ]
+}

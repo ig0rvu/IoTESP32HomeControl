@@ -1,0 +1,7 @@
+build/
+managed_components/
+sdkconfig.old
+.vscode/
+main/proto/nanopb_generator.exe
+prompt.txt
+pytest_hello_world.py

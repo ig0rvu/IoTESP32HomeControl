@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <title>HomeControl node</title>
+</head>
+<body>
+    <h1>HomeControl node</h1>
+    <form id="configForm" action="/save" method="POST">
+        <label for="ssid">WiFi SSID:</label><br>
+        <input type="text" id="ssid" name="ssid"><br><br>
+        <label for="password">WiFi lozinka:</label><br>
+        <input type="password" id="password" name="password"><br><br>
+
+        <label><input type="radio" name="mode" value="new" checked onclick="toggleMode()"> Nov kontroler</label>
+        <label><input type="radio" name="mode" value="replace" onclick="toggleMode()"> Zamena postojeceg</label>
+        <br><br>
+
+        <div id="newSection">
+            
+            <label for="ctrl_id">ID kontrolera:</label><br>
+            <input type="text" id="ctrl_id" name="ctrl_id"><br><br>
+            <label for="ctrl_description">Opis:</label><br>
+            <input type="text" id="ctrl_description" name="ctrl_description"><br><br>
+            <h3>Konfiguracija pinova</h3>
+            <table>
+                <thead>
+                    <tr><th>Pin</th><th>Funkcija</th></tr>
+                </thead>
+                <tbody id="pinsContainer"></tbody>
+            </table>
+        </div>
+
+        <div id="replaceSection" style="display:none;">
+            <label for="replace_id">ID kontrolera koji se zamenjuje:</label><br>
+            <input type="text" id="replace_id" name="replace_id"><br><br>
+        </div>
+
+        <input type="hidden" id="pins" name="pins" value="">
+        <br><br>
+        <button type="submit">OK</button>
+        <button type="reset">Cancel</button>
+    </form>
+
+<script>
+function toggleMode() {
+    var mode = document.querySelector('input[name="mode"]:checked').value;
+    document.getElementById('newSection').style.display = (mode === 'new') ? 'block' : 'none';
+    document.getElementById('replaceSection').style.display = (mode === 'replace') ? 'block' : 'none';
+}
+
+function loadPins() 
+{
+    fetch('/pins.json')
+        .then(function(response) { return response.json(); })
+       .then(function(data) 
+       {
+        var container = document.getElementById('pinsContainer');
+        data.pins.forEach(function(pin) {
+        var row = document.createElement('tr');
+
+        var pinCell = document.createElement('td');
+        pinCell.textContent = 'Pin ' + pin.pin;
+        row.appendChild(pinCell);
+
+        var selectCell = document.createElement('td');
+        var select = document.createElement('select');
+        select.setAttribute('data-pin', pin.pin);
+
+        var noneOption = document.createElement('option');
+        noneOption.value = '';
+        noneOption.textContent = '(nekorisceno)';
+        select.appendChild(noneOption);
+
+        pin.functions.forEach(function(fn) 
+        {
+            var opt = document.createElement('option');
+            opt.value = fn;
+            opt.textContent = fn;
+            select.appendChild(opt);
+        });
+
+        selectCell.appendChild(select);
+        row.appendChild(selectCell);
+
+        container.appendChild(row);
+    });
+});
+}
+
+document.getElementById('configForm').addEventListener('submit', function(ev) {
+    var mode = document.querySelector('input[name="mode"]:checked').value;
+    var ssid = document.getElementById('ssid').value.trim();
+
+    if (ssid === '') {
+        ev.preventDefault();
+        alert('WiFi SSID je obavezan.');
+        return;
+    }
+
+    if (mode === 'new') {
+        var ctrlId = document.getElementById('ctrl_id').value.trim();
+        if (ctrlId === '') {
+            ev.preventDefault();
+            alert('Ime kontrolera je obavezno.');
+            return;
+        }
+
+        var selects = document.querySelectorAll('#pinsContainer select');
+        var parts = [];
+        selects.forEach(function(sel) {
+            if (sel.value !== '') {
+                parts.push(sel.getAttribute('data-pin') + ':' + sel.value);
+            }
+        });
+        document.getElementById('pins').value = parts.join(',');
+    } else if (mode === 'replace') {
+        var replaceId = document.getElementById('replace_id').value.trim();
+        if (replaceId === '') {
+            ev.preventDefault();
+            alert('ID kontrolera koji se zamenjuje je obavezan.');
+            return;
+        }
+    }
+});
+
+loadPins();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,109 @@
+﻿syntax = "proto3";
+
+package controlhome;
+
+option csharp_namespace = "HomeAtPalm.Protocol";
+
+// Top-level frame sent in both directions over the raw TCP channel.
+// Wire framing (outside this schema): 4-byte big-endian length prefix + serialized Envelope bytes.
+message Envelope {
+  // Always present. "AA:BB:CC:DD:EE:FF" format, matches controller.macaddress (char(17)).
+  string mac_address = 1;
+
+  oneof payload {
+    Heartbeat heartbeat = 2;
+    RegisterController register_controller = 3;
+    IoReport io_report = 4;
+    Command command = 5;
+    Ack ack = 6;
+    ReplaceController replace_controller = 7;
+    ControllerConfig controller_config =8;
+    Rfid rfid_tag = 9;
+  }
+}
+
+message Heartbeat {
+  uint64 uptime_ms = 1;
+}
+
+enum PinDirection {
+  PIN_DIRECTION_UNSPECIFIED = 0;
+  PIN_DIRECTION_IN = 1;
+  PIN_DIRECTION_OUT = 2;
+  PIN_DIRECTION_BIDIRECTIONAL = 3;
+  PIN_DIRECTION_SYSTEM = 4;
+}
+
+enum PinFunction {
+  PIN_FUNCTION_UNSPECIFIED = 0;
+  PIN_FUNCTION_GPIO = 1;
+  PIN_FUNCTION_SPI = 2;
+  PIN_FUNCTION_I2C = 3;
+  PIN_FUNCTION_ADC = 4;
+  PIN_FUNCTION_ONEWIRE = 5;
+  PIN_FUNCTION_UART = 6;
+}
+
+message PinConfig {
+  uint32 gpio = 1;
+  PinDirection direction = 2;
+  PinFunction function = 3;
+}
+
+// Sent once by a controller that the server does not yet recognize by mac_address.
+message RegisterController {
+  string id =  1;
+  string description = 2;
+  repeated PinConfig pins = 3;
+}
+
+message DigitalPin {
+  uint32 gpio = 1;
+  bool value = 2;
+}
+
+message AnalogPin {
+  uint32 gpio = 1;
+  uint32 raw_value = 2;
+}
+
+// Periodic / on-change IO state report from an already-registered controller.
+message IoReport {
+  repeated DigitalPin digital_inputs = 1;
+  repeated DigitalPin digital_outputs = 2;
+  repeated AnalogPin analog_inputs = 3;
+}
+
+// Server -> controller: drive one output pin.
+message Command {
+  uint32 gpio = 1;
+  string action = 2;
+  uint32 duration =3;
+}
+
+//ReplaceController poruka koja kaže da je novi uređaj zamena za postojeći 
+message ReplaceController
+{
+    
+    string idcontroller =1;
+}
+
+//Controller config poruka koju vrati server kad je dobio poruku o zameni
+message ControllerConfig
+{
+  repeated  PinConfig pins = 1;
+  string message = 2;
+  
+}
+
+// Generic acknowledgement, e.g. reply to RegisterController or Command.
+message Ack {
+  int32 status_code = 1;
+  string message = 2;
+}
+
+message Rfid
+{
+  string tag_id = 1;
+  uint32 gpio_number = 2;
+}
