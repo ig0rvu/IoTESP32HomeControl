@@ -61,6 +61,8 @@ starts its own access point instead of connecting to anything:
    captive-portal mini-browser pops up and JavaScript doesn't run).
 4. Fill in the form:
    - **WiFi SSID / password** — the real network the controller should join.
+   - **Server IP** — address of the backend server (pre-filled with a
+     default; override if pointing at a different deployment).
    - **Mode**, pick one:
      - **New controller** — enter a controller ID and description, then
        assign a function to each available GPIO pin from the dropdowns
@@ -107,11 +109,13 @@ each one supports, is defined in [`main/html/pins.json`](main/html/pins.json).
 
 ## Server connection
 
-The server address is currently compiled in (`SERVER_IP`/`SERVER_PORT` in
-[`main/tcp_client.c`](main/tcp_client.c)) — update it for your deployment
-before building. See [`PROTOCOL.md`](PROTOCOL.md) for the wire format,
-message schema overview, and how to regenerate the nanopb bindings after
-changing `controlhome.proto`.
+The server IP is set per-device via the AP provisioning form (stored in NVS
+as `server_ip`, alongside `ssid`/`password`); devices provisioned before this
+field existed fall back to `SERVER_IP_DEFAULT` in
+[`main/tcp_client.c`](main/tcp_client.c). The port (`SERVER_PORT`, default
+`9000`) is still compile-time only. See [`PROTOCOL.md`](PROTOCOL.md) for the
+wire format, message schema overview, and how to regenerate the nanopb
+bindings after changing `controlhome.proto`.
 
 ## Building and flashing
 

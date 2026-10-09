@@ -7,6 +7,7 @@
 static const char *TAG = "gpio";    
 
 static TaskHandle_t s_notify_task = NULL;
+static bool s_isr_service_installed = false;
 
   uint32_t gpio_in_pins[MAX_GPIO_PINS];
   uint32_t gpio_out_pins[MAX_GPIO_PINS];
@@ -72,8 +73,11 @@ void gpio_ctrl_init(const gpio_pin_list_t *config)
       
     gpio_config(&in_conf);
     ESP_LOGI(TAG, "GPIO initialized: %d output(s), %d input(s) with interrupt", (int)gpio_out_pin_count, (int)gpio_in_pin_count);
-    gpio_install_isr_service(0);
-    
+    if (!s_isr_service_installed) {
+        gpio_install_isr_service(0);
+        s_isr_service_installed = true;
+    }
+
     for (size_t i = 0; i < gpio_in_pin_count; i++) {
         gpio_isr_handler_add(gpio_in_pins[i], gpio_isr_handler, NULL);
        

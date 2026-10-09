@@ -19,6 +19,7 @@
 #include <stdlib.h>
 
 #define WIFI_NVS_NAMESPACE "wifi_cfg"
+#define NVS_KEY_SERVER_IP "server_ip"
 #define NVS_KEY_MODE "mode"
 #define NVS_KEY_CTRL_ID "ctrl_id"
 #define NVS_KEY_CTRL_DESC "ctrl_desc"
@@ -27,11 +28,19 @@
 #define MAX_REGISTER_PINS 20
 
 
-#define SERVER_IP             "192.168.0.45"
+// Fallback only -- the real value comes from NVS ("server_ip", set via the
+// AP-mode config form alongside ssid/password). This covers devices that were
+// provisioned before that field existed.
+#define SERVER_IP_DEFAULT     "192.168.0.32"
 #define SERVER_PORT           9000
 #define MAX_FRAME_BYTES       512
 #define RECONNECT_DELAY_MS    5000
-#define HEARTBEAT_INTERVAL_MS 20000
+// Fallback-only now: IoReport is sent on an actual pin-change interrupt (see
+// gpio_ctrl_notify_task) or an explicit RequestStatus from the server. This
+// interval only governs how often a lightweight Heartbeat goes out when
+// NEITHER of those has happened, so DeviceLastSeenTracker on the server
+// doesn't go stale on a quiet-but-healthy connection.
+#define HEARTBEAT_INTERVAL_MS 300000
 
 static const char *TAG = "tcp_client";
 
@@ -352,6 +361,18 @@ static void command_task(void *pvParameters)
                 break;
             }
             
+        } else if (response.which_payload == controlhome_Envelope_request_status_tag) {
+            ESP_LOGI(TAG, "RequestStatus received, sending immediate IoReport");
+            controlhome_Envelope env = (controlhome_Envelope)controlhome_Envelope_init_zero;
+            safe_strcpy(env.mac_address, sizeof(env.mac_address), ctx->mac);
+            env.which_payload = controlhome_Envelope_io_report_tag;
+            env.payload.io_report = build_ioreport();
+
+            if (ctx->connection_alive) {
+                xSemaphoreTake(ctx->write_lock, portMAX_DELAY);
+                send_envelope(ctx->sock, &env);
+                xSemaphoreGive(ctx->write_lock);
+            }
         } else {
             ESP_LOGW(TAG, "command_task: unexpected payload case %d", (int)response.which_payload);
         }
@@ -375,6 +396,7 @@ void device_task(void *pvParameters)
     char ctrl_desc[128] = {0};
     char pins_str[512] = {0};
     char replace_id[64] = {0};
+    char server_ip[16] = {0};
 
     controlhome_PinConfig pins[MAX_REGISTER_PINS];
     size_t pins_count = 0;
@@ -387,19 +409,25 @@ void device_task(void *pvParameters)
         len = sizeof(ctrl_desc);  nvs_get_str(nvs_h, NVS_KEY_CTRL_DESC, ctrl_desc, &len);
         len = sizeof(pins_str);   nvs_get_str(nvs_h, NVS_KEY_PINS, pins_str, &len);
         len = sizeof(replace_id); nvs_get_str(nvs_h, NVS_KEY_REPLACE_ID, replace_id, &len);
+        len = sizeof(server_ip);  nvs_get_str(nvs_h, NVS_KEY_SERVER_IP, server_ip, &len);
         nvs_close(nvs_h);
     }
+    if (server_ip[0] == '\0') {
+        // Not set -- device provisioned before this field existed, or NVS read failed.
+        safe_strcpy(server_ip, sizeof(server_ip), SERVER_IP_DEFAULT);
+    }
+    ESP_LOGI(TAG, "Server IP: %s", server_ip);
 
     pins_count = parse_pins_string(pins_str, pins, MAX_REGISTER_PINS);
     ESP_LOGI(TAG, "Loaded %u pin(s) from NVS for registration", (unsigned)pins_count);
 
-    while (1) 
+    while (1)
     {
 
         struct sockaddr_in server_addr = { 0 };
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(SERVER_PORT);
-        inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr);
+        inet_pton(AF_INET, server_ip, &server_addr.sin_addr);
 
         int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (sock < 0) {
@@ -409,12 +437,12 @@ void device_task(void *pvParameters)
         }
 
         if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) != 0) {
-            ESP_LOGE(TAG, "connect() to %s:%d failed: errno %d", SERVER_IP, SERVER_PORT, errno);
+            ESP_LOGE(TAG, "connect() to %s:%d failed: errno %d", server_ip, SERVER_PORT, errno);
             close(sock);
             vTaskDelay(pdMS_TO_TICKS(RECONNECT_DELAY_MS));
             continue;
         }
-        ESP_LOGI(TAG, "Connected to server %s:%d", SERVER_IP, SERVER_PORT);
+        ESP_LOGI(TAG, "Connected to server %s:%d", server_ip, SERVER_PORT);
 
         bool registered;
         if (strcmp(mode, "replace") == 0) {
@@ -479,13 +507,39 @@ void device_task(void *pvParameters)
         s_active_connection = &ctx;
         xTaskCreate(command_task, "command_task", 4096, &ctx, 5, NULL);
 
-        while (ctx.connection_alive) {
+        // Baseline IoReport right after (re)connecting, so the server has a fresh
+        // snapshot before settling into on-change-only reporting.
+        {
             controlhome_IoReport report = build_ioreport();
-
             controlhome_Envelope env = (controlhome_Envelope)controlhome_Envelope_init_zero;
             safe_strcpy(env.mac_address, sizeof(env.mac_address), mac_str);
             env.which_payload = controlhome_Envelope_io_report_tag;
             env.payload.io_report = report;
+
+            xSemaphoreTake(ctx.write_lock, portMAX_DELAY);
+            int send_result = send_envelope(sock, &env);
+            xSemaphoreGive(ctx.write_lock);
+            if (send_result != 0) {
+                ctx.connection_alive = false;
+            }
+        }
+
+        while (ctx.connection_alive) {
+            // Woken early (non-zero) by a GPIO ISR on an actual pin change -- send
+            // a fresh IoReport. Timed out (zero) with nothing changed -- send a
+            // lightweight Heartbeat instead, just to keep last-seen current.
+            uint32_t notified = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS));
+
+            controlhome_Envelope env = (controlhome_Envelope)controlhome_Envelope_init_zero;
+            safe_strcpy(env.mac_address, sizeof(env.mac_address), mac_str);
+
+            if (notified > 0) {
+                env.which_payload = controlhome_Envelope_io_report_tag;
+                env.payload.io_report = build_ioreport();
+            } else {
+                env.which_payload = controlhome_Envelope_heartbeat_tag;
+                env.payload.heartbeat.uptime_ms = (uint64_t)(esp_timer_get_time() / 1000);
+            }
 
             xSemaphoreTake(ctx.write_lock, portMAX_DELAY);
             int send_result = send_envelope(sock, &env);
@@ -495,8 +549,6 @@ void device_task(void *pvParameters)
                 ctx.connection_alive = false;
                 break;
             }
-
-            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS));
         }
 
         s_active_connection = NULL;

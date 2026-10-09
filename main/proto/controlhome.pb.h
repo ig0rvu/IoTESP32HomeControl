@@ -97,6 +97,13 @@ typedef struct _controlhome_Rfid {
     uint32_t gpio_number;
 } controlhome_Rfid;
 
+/* Server -> controller: asks for an immediate IoReport instead of waiting for
+ the next pin-change or the slow Heartbeat fallback. Empty -- it's a signal,
+ not data. */
+typedef struct _controlhome_RequestStatus {
+    char dummy_field;
+} controlhome_RequestStatus;
+
 /* Top-level frame sent in both directions over the raw TCP channel.
  Wire framing (outside this schema): 4-byte big-endian length prefix + serialized Envelope bytes. */
 typedef struct _controlhome_Envelope {
@@ -112,6 +119,7 @@ typedef struct _controlhome_Envelope {
         controlhome_ReplaceController replace_controller;
         controlhome_ControllerConfig controller_config;
         controlhome_Rfid rfid_tag;
+        controlhome_RequestStatus request_status;
     } payload;
 } controlhome_Envelope;
 
@@ -144,6 +152,7 @@ extern "C" {
 
 
 
+
 /* Initializer values for message structs */
 #define controlhome_Envelope_init_default        {"", 0, {controlhome_Heartbeat_init_default}}
 #define controlhome_Heartbeat_init_default       {0}
@@ -157,6 +166,7 @@ extern "C" {
 #define controlhome_ControllerConfig_init_default {0, {controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default}, ""}
 #define controlhome_Ack_init_default             {0, ""}
 #define controlhome_Rfid_init_default            {"", 0}
+#define controlhome_RequestStatus_init_default   {0}
 #define controlhome_Envelope_init_zero           {"", 0, {controlhome_Heartbeat_init_zero}}
 #define controlhome_Heartbeat_init_zero          {0}
 #define controlhome_PinConfig_init_zero          {0, _controlhome_PinDirection_MIN, _controlhome_PinFunction_MIN}
@@ -169,6 +179,7 @@ extern "C" {
 #define controlhome_ControllerConfig_init_zero   {0, {controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero}, ""}
 #define controlhome_Ack_init_zero                {0, ""}
 #define controlhome_Rfid_init_zero               {"", 0}
+#define controlhome_RequestStatus_init_zero      {0}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define controlhome_Heartbeat_uptime_ms_tag      1
@@ -204,6 +215,7 @@ extern "C" {
 #define controlhome_Envelope_replace_controller_tag 7
 #define controlhome_Envelope_controller_config_tag 8
 #define controlhome_Envelope_rfid_tag_tag        9
+#define controlhome_Envelope_request_status_tag  10
 
 /* Struct field encoding specification for nanopb */
 #define controlhome_Envelope_FIELDLIST(X, a) \
@@ -215,7 +227,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,command,payload.command),   5) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ack,payload.ack),   6) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,replace_controller,payload.replace_controller),   7) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,controller_config,payload.controller_config),   8) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,rfid_tag,payload.rfid_tag),   9)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,rfid_tag,payload.rfid_tag),   9) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,request_status,payload.request_status),  10)
 #define controlhome_Envelope_CALLBACK NULL
 #define controlhome_Envelope_DEFAULT NULL
 #define controlhome_Envelope_payload_heartbeat_MSGTYPE controlhome_Heartbeat
@@ -226,6 +239,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,rfid_tag,payload.rfid_tag),   9)
 #define controlhome_Envelope_payload_replace_controller_MSGTYPE controlhome_ReplaceController
 #define controlhome_Envelope_payload_controller_config_MSGTYPE controlhome_ControllerConfig
 #define controlhome_Envelope_payload_rfid_tag_MSGTYPE controlhome_Rfid
+#define controlhome_Envelope_payload_request_status_MSGTYPE controlhome_RequestStatus
 
 #define controlhome_Heartbeat_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT64,   uptime_ms,         1)
@@ -300,6 +314,11 @@ X(a, STATIC,   SINGULAR, UINT32,   gpio_number,       2)
 #define controlhome_Rfid_CALLBACK NULL
 #define controlhome_Rfid_DEFAULT NULL
 
+#define controlhome_RequestStatus_FIELDLIST(X, a) \
+
+#define controlhome_RequestStatus_CALLBACK NULL
+#define controlhome_RequestStatus_DEFAULT NULL
+
 extern const pb_msgdesc_t controlhome_Envelope_msg;
 extern const pb_msgdesc_t controlhome_Heartbeat_msg;
 extern const pb_msgdesc_t controlhome_PinConfig_msg;
@@ -312,6 +331,7 @@ extern const pb_msgdesc_t controlhome_ReplaceController_msg;
 extern const pb_msgdesc_t controlhome_ControllerConfig_msg;
 extern const pb_msgdesc_t controlhome_Ack_msg;
 extern const pb_msgdesc_t controlhome_Rfid_msg;
+extern const pb_msgdesc_t controlhome_RequestStatus_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define controlhome_Envelope_fields &controlhome_Envelope_msg
@@ -326,6 +346,7 @@ extern const pb_msgdesc_t controlhome_Rfid_msg;
 #define controlhome_ControllerConfig_fields &controlhome_ControllerConfig_msg
 #define controlhome_Ack_fields &controlhome_Ack_msg
 #define controlhome_Rfid_fields &controlhome_Rfid_msg
+#define controlhome_RequestStatus_fields &controlhome_RequestStatus_msg
 
 /* Maximum encoded size of messages (where known) */
 #define CONTROLHOME_CONTROLHOME_PB_H_MAX_SIZE    controlhome_Envelope_size
@@ -340,6 +361,7 @@ extern const pb_msgdesc_t controlhome_Rfid_msg;
 #define controlhome_PinConfig_size               10
 #define controlhome_RegisterController_size      394
 #define controlhome_ReplaceController_size       52
+#define controlhome_RequestStatus_size           0
 #define controlhome_Rfid_size                    39
 
 #ifdef __cplusplus

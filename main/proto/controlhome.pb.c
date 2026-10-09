@@ -42,6 +42,9 @@ PB_BIND(controlhome_Ack, controlhome_Ack, 2)
 PB_BIND(controlhome_Rfid, controlhome_Rfid, AUTO)
 
 
+PB_BIND(controlhome_RequestStatus, controlhome_RequestStatus, AUTO)
+
+
 
 
 

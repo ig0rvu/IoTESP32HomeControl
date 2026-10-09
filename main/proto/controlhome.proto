@@ -19,6 +19,7 @@ message Envelope {
     ReplaceController replace_controller = 7;
     ControllerConfig controller_config =8;
     Rfid rfid_tag = 9;
+    RequestStatus request_status = 10;
   }
 }
 
@@ -106,4 +107,10 @@ message Rfid
 {
   string tag_id = 1;
   uint32 gpio_number = 2;
+}
+
+// Server -> controller: asks for an immediate IoReport instead of waiting for
+// the next pin-change or the slow Heartbeat fallback. Empty -- it's a signal,
+// not data.
+message RequestStatus {
 }

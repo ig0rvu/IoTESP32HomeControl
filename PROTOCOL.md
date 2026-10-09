@@ -29,14 +29,22 @@ one of the `oneof payload` fields is populated:
 
 | Message              | Direction        | Purpose                                                        |
 |----------------------|-------------------|------------------------------------------------------------------|
-| `Heartbeat`          | device → server  | Keepalive with uptime (ack'd 200, no handler logic yet)         |
+| `Heartbeat`          | device → server  | Slow liveness fallback (every 5 min) when nothing has changed   |
 | `RegisterController` | device → server  | First-time registration: id, description, pin list              |
 | `ReplaceController`  | device → server  | Bind a new MAC to an existing `idcontroller`                     |
 | `ControllerConfig`   | server → device  | Reply to `ReplaceController`: the pin list to adopt              |
-| `IoReport`           | device → server  | Periodic digital/analog pin state report                         |
+| `IoReport`           | device → server  | Digital/analog pin state report                                  |
 | `Command`            | server → device  | Drive one output pin (gpio, action, duration)                    |
 | `Rfid`               | device → server  | RFID tag read event                                              |
+| `RequestStatus`      | server → device  | Ask for an immediate `IoReport` (e.g. on dashboard refresh)      |
 | `Ack`                | server → device  | Generic status_code + message reply                             |
+
+`IoReport` is event-driven, not polled on a fixed interval: a device sends one
+right after it (re)connects (baseline state), whenever a monitored pin changes
+(GPIO interrupt wakes the send loop), or immediately on receiving
+`RequestStatus`. If neither happens for 5 minutes, `Heartbeat` goes out
+instead, just to prove the device is still alive without resending full pin
+state.
 
 ## Why there's a `.options` file
 

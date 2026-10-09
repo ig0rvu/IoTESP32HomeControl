@@ -14,6 +14,7 @@
 #define NVS_NAMESPACE "wifi_cfg"
 #define NVS_KEY_SSID "ssid"
 #define NVS_KEY_PASSWORD "password"
+#define NVS_KEY_SERVER_IP "server_ip"
 #define NVS_KEY_MODE "mode"
 #define NVS_KEY_PINS "pins"
 #define NVS_KEY_REPLACE_ID "replace_id"
@@ -134,7 +135,7 @@ static esp_err_t save_post_handler(httpd_req_t *req)
 
     char ssid[33] = {0};
     char password[65] = {0};
-    
+    char server_ip[16] = {0};
 
     if (httpd_query_key_value(buf, "ssid", ssid, sizeof(ssid)) != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing ssid");
@@ -143,6 +144,8 @@ static esp_err_t save_post_handler(httpd_req_t *req)
     url_decode(ssid);
     httpd_query_key_value(buf, "password", password, sizeof(password));
     url_decode(password);
+    httpd_query_key_value(buf, "server_ip", server_ip, sizeof(server_ip));
+    url_decode(server_ip);
 
     char mode[16] = {0};
     httpd_query_key_value(buf, "mode", mode, sizeof(mode));
@@ -156,6 +159,7 @@ static esp_err_t save_post_handler(httpd_req_t *req)
 
     nvs_set_str(handle, NVS_KEY_SSID, ssid);
     nvs_set_str(handle, NVS_KEY_PASSWORD, password);
+    nvs_set_str(handle, NVS_KEY_SERVER_IP, server_ip);
     nvs_set_str(handle, NVS_KEY_MODE, mode);
 
     if (strcmp(mode, "new") == 0) {
@@ -186,7 +190,7 @@ static esp_err_t save_post_handler(httpd_req_t *req)
     nvs_commit(handle);
     nvs_close(handle);
 
-    ESP_LOGI(TAG, "Saved WiFi credentials, SSID=%s", ssid);
+    ESP_LOGI(TAG, "Saved WiFi credentials, SSID=%s, server_ip=%s", ssid, server_ip);
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr(req, "<html><body><h1>Sacuvano. Restartovanje...</h1></body></html>");

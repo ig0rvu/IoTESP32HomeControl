@@ -11,6 +11,8 @@
         <input type="text" id="ssid" name="ssid"><br><br>
         <label for="password">WiFi lozinka:</label><br>
         <input type="password" id="password" name="password"><br><br>
+        <label for="server_ip">IP adresa servera:</label><br>
+        <input type="text" id="server_ip" name="server_ip" value="192.168.0.32"><br><br>
 
         <label><input type="radio" name="mode" value="new" checked onclick="toggleMode()"> Nov kontroler</label>
         <label><input type="radio" name="mode" value="replace" onclick="toggleMode()"> Zamena postojeceg</label>
@@ -95,6 +97,13 @@ document.getElementById('configForm').addEventListener('submit', function(ev) {
     if (ssid === '') {
         ev.preventDefault();
         alert('WiFi SSID je obavezan.');
+        return;
+    }
+
+    var serverIp = document.getElementById('server_ip').value.trim();
+    if (serverIp === '') {
+        ev.preventDefault();
+        alert('IP adresa servera je obavezna.');
         return;
     }
 
