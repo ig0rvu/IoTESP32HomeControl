@@ -1,7 +1,9 @@
 controlhome.Envelope.mac_address max_size:18
+controlhome.Heartbeat.firmware_version max_size:32
 controlhome.RegisterController.id max_size:51
 controlhome.RegisterController.description max_size:101
 controlhome.RegisterController.pins max_count:20
+controlhome.RegisterController.firmware_version max_size:32
 controlhome.ReplaceController.idcontroller max_size:51
 controlhome.ControllerConfig.pins max_count:20
 controlhome.ControllerConfig.message max_size:256
@@ -11,3 +13,6 @@ controlhome.IoReport.analog_inputs max_count:20
 controlhome.Ack.message max_size:256
 controlhome.Command.action max_size:32
 controlhome.Rfid.tag_id max_size:32
+controlhome.FirmwareUpdate.version max_size:32
+controlhome.FirmwareUpdate.url max_size:128
+controlhome.FirmwareUpdate.sha256 max_size:65

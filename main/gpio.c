@@ -54,7 +54,9 @@ void gpio_ctrl_init(const gpio_pin_list_t *config)
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_ANYEDGE,  
     };
-    gpio_config(&out_conf);
+    if (out_mask != 0) {
+        gpio_config(&out_conf);
+    }
     for (size_t i = 0; i < gpio_out_pin_count; i++) {
         gpio_set_level(gpio_out_pins[i], 0);
     }
@@ -71,7 +73,9 @@ void gpio_ctrl_init(const gpio_pin_list_t *config)
         .intr_type = GPIO_INTR_ANYEDGE,
     };
       
-    gpio_config(&in_conf);
+    if (in_mask != 0) {
+        gpio_config(&in_conf);
+    }
     ESP_LOGI(TAG, "GPIO initialized: %d output(s), %d input(s) with interrupt", (int)gpio_out_pin_count, (int)gpio_in_pin_count);
     if (!s_isr_service_installed) {
         gpio_install_isr_service(0);

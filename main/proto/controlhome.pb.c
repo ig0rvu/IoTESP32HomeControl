@@ -45,6 +45,9 @@ PB_BIND(controlhome_Rfid, controlhome_Rfid, AUTO)
 PB_BIND(controlhome_RequestStatus, controlhome_RequestStatus, AUTO)
 
 
+PB_BIND(controlhome_FirmwareUpdate, controlhome_FirmwareUpdate, AUTO)
+
+
 
 
 

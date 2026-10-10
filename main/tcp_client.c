@@ -14,6 +14,9 @@
 #include "tcp_client.h"
 #include "gpio.h"
 #include "rfid.h"
+#include "ota.h"
+#include "version.h"
+#include "esp_ota_ops.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include <stdlib.h>
@@ -52,6 +55,10 @@ typedef struct {
 } connection_ctx_t;
 
 static connection_ctx_t *volatile s_active_connection = NULL;
+// Set once by device_task after it resolves server_ip (NVS value or
+// SERVER_IP_DEFAULT fallback) -- command_task reads it to turn a
+// FirmwareUpdate's relative path into a full URL for esp_https_ota.
+static char s_server_ip[16] = {0};
 
 // strncpy doesn't guarantee null-termination if src is >= dest_size; nanopb's
 // fixed char[] fields need to always be terminated since we treat them as C strings.
@@ -223,6 +230,7 @@ static bool register_controller(int sock, const char *mac, const char *id, const
     env.which_payload = controlhome_Envelope_register_controller_tag;
     safe_strcpy(env.payload.register_controller.id, sizeof(env.payload.register_controller.id), id);
     safe_strcpy(env.payload.register_controller.description, sizeof(env.payload.register_controller.description), description);
+    safe_strcpy(env.payload.register_controller.firmware_version, sizeof(env.payload.register_controller.firmware_version), FIRMWARE_VERSION);
 
     env.payload.register_controller.pins_count = pins_count;
     for (size_t i = 0; i < pins_count; i++) {
@@ -373,6 +381,28 @@ static void command_task(void *pvParameters)
                 send_envelope(ctx->sock, &env);
                 xSemaphoreGive(ctx->write_lock);
             }
+        } else if (response.which_payload == controlhome_Envelope_firmware_update_tag) {
+            ESP_LOGI(TAG, "FirmwareUpdate received: version=%s path=%s",
+                     response.payload.firmware_update.version, response.payload.firmware_update.url);
+            // Refuse regardless of why the server sent this -- auto-push logic
+            // or an admin force-pushing a specific release, doesn't matter.
+            // Protects against ever flashing backwards onto something older.
+            if (!ota_is_newer_version(response.payload.firmware_update.version, FIRMWARE_VERSION)) {
+                ESP_LOGW(TAG, "FirmwareUpdate version=%s is not newer than current %s, ignoring",
+                         response.payload.firmware_update.version, FIRMWARE_VERSION);
+            } else {
+                // Server only sends a bare path (it doesn't track what IP the
+                // device itself used to reach it) -- same host this socket is
+                // already connected to, just a different port (HTTP, not the
+                // raw TCP one this channel uses).
+                char full_url[160];
+                snprintf(full_url, sizeof(full_url), "http://%s:%u%s", s_server_ip,
+                         (unsigned int)response.payload.firmware_update.port, response.payload.firmware_update.url);
+                // Kicks off a separate task and returns immediately -- the download
+                // takes seconds and must not block this read loop (or the socket
+                // read timeout / other server traffic on this connection).
+                ota_start_update(full_url);
+            }
         } else {
             ESP_LOGW(TAG, "command_task: unexpected payload case %d", (int)response.which_payload);
         }
@@ -416,6 +446,7 @@ void device_task(void *pvParameters)
         // Not set -- device provisioned before this field existed, or NVS read failed.
         safe_strcpy(server_ip, sizeof(server_ip), SERVER_IP_DEFAULT);
     }
+    safe_strcpy(s_server_ip, sizeof(s_server_ip), server_ip);
     ESP_LOGI(TAG, "Server IP: %s", server_ip);
 
     pins_count = parse_pins_string(pins_str, pins, MAX_REGISTER_PINS);
@@ -482,6 +513,12 @@ void device_task(void *pvParameters)
             continue;
         }
 
+        // First confirmed-healthy point after a boot (WiFi up, server reachable,
+        // registration accepted) -- safe to cancel the OTA rollback timer here.
+        // A freshly-flashed image that never gets this far reverts to the
+        // previous OTA slot on next boot instead of looping forever.
+        esp_ota_mark_app_valid_cancel_rollback();
+
         // "mode"/"replace_id" only matter for the one-time provisioning handshake
         // right after an AP-mode form submit -- clear them once it succeeds so
         // later reconnects (this boot or any future one) fall through to the
@@ -539,6 +576,7 @@ void device_task(void *pvParameters)
             } else {
                 env.which_payload = controlhome_Envelope_heartbeat_tag;
                 env.payload.heartbeat.uptime_ms = (uint64_t)(esp_timer_get_time() / 1000);
+                safe_strcpy(env.payload.heartbeat.firmware_version, sizeof(env.payload.heartbeat.firmware_version), FIRMWARE_VERSION);
             }
 
             xSemaphoreTake(ctx.write_lock, portMAX_DELAY);

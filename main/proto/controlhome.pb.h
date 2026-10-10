@@ -31,6 +31,7 @@ typedef enum _controlhome_PinFunction {
 /* Struct definitions */
 typedef struct _controlhome_Heartbeat {
     uint64_t uptime_ms;
+    char firmware_version[32];
 } controlhome_Heartbeat;
 
 typedef struct _controlhome_PinConfig {
@@ -39,12 +40,16 @@ typedef struct _controlhome_PinConfig {
     controlhome_PinFunction function;
 } controlhome_PinConfig;
 
-/* Sent once by a controller that the server does not yet recognize by mac_address. */
+/* Sent once by a controller that the server does not yet recognize by mac_address,
+ and again on every reconnect for an already-known one (tolerated as a 409 by
+ the server) -- so firmware_version rides along on every connection, giving the
+ server a chance to notice a stale version and push a FirmwareUpdate back. */
 typedef struct _controlhome_RegisterController {
     char id[51];
     char description[101];
     pb_size_t pins_count;
     controlhome_PinConfig pins[20];
+    char firmware_version[32];
 } controlhome_RegisterController;
 
 typedef struct _controlhome_DigitalPin {
@@ -104,6 +109,17 @@ typedef struct _controlhome_RequestStatus {
     char dummy_field;
 } controlhome_RequestStatus;
 
+/* Server -> controller: a newer firmware build is available. url is a plain
+ HTTP path on the same server the device already talks to (e.g.
+ /api/firmware/download/esp32/1.2.0); sha256 is advisory for now (esp_https_ota's
+ own image-header validation is what actually guards against a bad flash). */
+typedef struct _controlhome_FirmwareUpdate {
+    char version[32];
+    char url[128];
+    char sha256[65];
+    uint32_t port;
+} controlhome_FirmwareUpdate;
+
 /* Top-level frame sent in both directions over the raw TCP channel.
  Wire framing (outside this schema): 4-byte big-endian length prefix + serialized Envelope bytes. */
 typedef struct _controlhome_Envelope {
@@ -120,6 +136,7 @@ typedef struct _controlhome_Envelope {
         controlhome_ControllerConfig controller_config;
         controlhome_Rfid rfid_tag;
         controlhome_RequestStatus request_status;
+        controlhome_FirmwareUpdate firmware_update;
     } payload;
 } controlhome_Envelope;
 
@@ -153,11 +170,12 @@ extern "C" {
 
 
 
+
 /* Initializer values for message structs */
 #define controlhome_Envelope_init_default        {"", 0, {controlhome_Heartbeat_init_default}}
-#define controlhome_Heartbeat_init_default       {0}
+#define controlhome_Heartbeat_init_default       {0, ""}
 #define controlhome_PinConfig_init_default       {0, _controlhome_PinDirection_MIN, _controlhome_PinFunction_MIN}
-#define controlhome_RegisterController_init_default {"", "", 0, {controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default}}
+#define controlhome_RegisterController_init_default {"", "", 0, {controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default, controlhome_PinConfig_init_default}, ""}
 #define controlhome_DigitalPin_init_default      {0, 0}
 #define controlhome_AnalogPin_init_default       {0, 0}
 #define controlhome_IoReport_init_default        {0, {controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default}, 0, {controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default, controlhome_DigitalPin_init_default}, 0, {controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default, controlhome_AnalogPin_init_default}}
@@ -167,10 +185,11 @@ extern "C" {
 #define controlhome_Ack_init_default             {0, ""}
 #define controlhome_Rfid_init_default            {"", 0}
 #define controlhome_RequestStatus_init_default   {0}
+#define controlhome_FirmwareUpdate_init_default  {"", "", "", 0}
 #define controlhome_Envelope_init_zero           {"", 0, {controlhome_Heartbeat_init_zero}}
-#define controlhome_Heartbeat_init_zero          {0}
+#define controlhome_Heartbeat_init_zero          {0, ""}
 #define controlhome_PinConfig_init_zero          {0, _controlhome_PinDirection_MIN, _controlhome_PinFunction_MIN}
-#define controlhome_RegisterController_init_zero {"", "", 0, {controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero}}
+#define controlhome_RegisterController_init_zero {"", "", 0, {controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero, controlhome_PinConfig_init_zero}, ""}
 #define controlhome_DigitalPin_init_zero         {0, 0}
 #define controlhome_AnalogPin_init_zero          {0, 0}
 #define controlhome_IoReport_init_zero           {0, {controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero}, 0, {controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero, controlhome_DigitalPin_init_zero}, 0, {controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero, controlhome_AnalogPin_init_zero}}
@@ -180,15 +199,18 @@ extern "C" {
 #define controlhome_Ack_init_zero                {0, ""}
 #define controlhome_Rfid_init_zero               {"", 0}
 #define controlhome_RequestStatus_init_zero      {0}
+#define controlhome_FirmwareUpdate_init_zero     {"", "", "", 0}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define controlhome_Heartbeat_uptime_ms_tag      1
+#define controlhome_Heartbeat_firmware_version_tag 2
 #define controlhome_PinConfig_gpio_tag           1
 #define controlhome_PinConfig_direction_tag      2
 #define controlhome_PinConfig_function_tag       3
 #define controlhome_RegisterController_id_tag    1
 #define controlhome_RegisterController_description_tag 2
 #define controlhome_RegisterController_pins_tag  3
+#define controlhome_RegisterController_firmware_version_tag 4
 #define controlhome_DigitalPin_gpio_tag          1
 #define controlhome_DigitalPin_value_tag         2
 #define controlhome_AnalogPin_gpio_tag           1
@@ -206,6 +228,10 @@ extern "C" {
 #define controlhome_Ack_message_tag              2
 #define controlhome_Rfid_tag_id_tag              1
 #define controlhome_Rfid_gpio_number_tag         2
+#define controlhome_FirmwareUpdate_version_tag   1
+#define controlhome_FirmwareUpdate_url_tag       2
+#define controlhome_FirmwareUpdate_sha256_tag    3
+#define controlhome_FirmwareUpdate_port_tag      4
 #define controlhome_Envelope_mac_address_tag     1
 #define controlhome_Envelope_heartbeat_tag       2
 #define controlhome_Envelope_register_controller_tag 3
@@ -216,6 +242,7 @@ extern "C" {
 #define controlhome_Envelope_controller_config_tag 8
 #define controlhome_Envelope_rfid_tag_tag        9
 #define controlhome_Envelope_request_status_tag  10
+#define controlhome_Envelope_firmware_update_tag 11
 
 /* Struct field encoding specification for nanopb */
 #define controlhome_Envelope_FIELDLIST(X, a) \
@@ -228,7 +255,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ack,payload.ack),   6) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,replace_controller,payload.replace_controller),   7) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,controller_config,payload.controller_config),   8) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,rfid_tag,payload.rfid_tag),   9) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,request_status,payload.request_status),  10)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,request_status,payload.request_status),  10) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,firmware_update,payload.firmware_update),  11)
 #define controlhome_Envelope_CALLBACK NULL
 #define controlhome_Envelope_DEFAULT NULL
 #define controlhome_Envelope_payload_heartbeat_MSGTYPE controlhome_Heartbeat
@@ -240,9 +268,11 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,request_status,payload.request_statu
 #define controlhome_Envelope_payload_controller_config_MSGTYPE controlhome_ControllerConfig
 #define controlhome_Envelope_payload_rfid_tag_MSGTYPE controlhome_Rfid
 #define controlhome_Envelope_payload_request_status_MSGTYPE controlhome_RequestStatus
+#define controlhome_Envelope_payload_firmware_update_MSGTYPE controlhome_FirmwareUpdate
 
 #define controlhome_Heartbeat_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UINT64,   uptime_ms,         1)
+X(a, STATIC,   SINGULAR, UINT64,   uptime_ms,         1) \
+X(a, STATIC,   SINGULAR, STRING,   firmware_version,   2)
 #define controlhome_Heartbeat_CALLBACK NULL
 #define controlhome_Heartbeat_DEFAULT NULL
 
@@ -256,7 +286,8 @@ X(a, STATIC,   SINGULAR, UENUM,    function,          3)
 #define controlhome_RegisterController_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, STRING,   id,                1) \
 X(a, STATIC,   SINGULAR, STRING,   description,       2) \
-X(a, STATIC,   REPEATED, MESSAGE,  pins,              3)
+X(a, STATIC,   REPEATED, MESSAGE,  pins,              3) \
+X(a, STATIC,   SINGULAR, STRING,   firmware_version,   4)
 #define controlhome_RegisterController_CALLBACK NULL
 #define controlhome_RegisterController_DEFAULT NULL
 #define controlhome_RegisterController_pins_MSGTYPE controlhome_PinConfig
@@ -319,6 +350,14 @@ X(a, STATIC,   SINGULAR, UINT32,   gpio_number,       2)
 #define controlhome_RequestStatus_CALLBACK NULL
 #define controlhome_RequestStatus_DEFAULT NULL
 
+#define controlhome_FirmwareUpdate_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, STRING,   version,           1) \
+X(a, STATIC,   SINGULAR, STRING,   url,               2) \
+X(a, STATIC,   SINGULAR, STRING,   sha256,            3) \
+X(a, STATIC,   SINGULAR, UINT32,   port,              4)
+#define controlhome_FirmwareUpdate_CALLBACK NULL
+#define controlhome_FirmwareUpdate_DEFAULT NULL
+
 extern const pb_msgdesc_t controlhome_Envelope_msg;
 extern const pb_msgdesc_t controlhome_Heartbeat_msg;
 extern const pb_msgdesc_t controlhome_PinConfig_msg;
@@ -332,6 +371,7 @@ extern const pb_msgdesc_t controlhome_ControllerConfig_msg;
 extern const pb_msgdesc_t controlhome_Ack_msg;
 extern const pb_msgdesc_t controlhome_Rfid_msg;
 extern const pb_msgdesc_t controlhome_RequestStatus_msg;
+extern const pb_msgdesc_t controlhome_FirmwareUpdate_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define controlhome_Envelope_fields &controlhome_Envelope_msg
@@ -347,6 +387,7 @@ extern const pb_msgdesc_t controlhome_RequestStatus_msg;
 #define controlhome_Ack_fields &controlhome_Ack_msg
 #define controlhome_Rfid_fields &controlhome_Rfid_msg
 #define controlhome_RequestStatus_fields &controlhome_RequestStatus_msg
+#define controlhome_FirmwareUpdate_fields &controlhome_FirmwareUpdate_msg
 
 /* Maximum encoded size of messages (where known) */
 #define CONTROLHOME_CONTROLHOME_PB_H_MAX_SIZE    controlhome_Envelope_size
@@ -356,10 +397,11 @@ extern const pb_msgdesc_t controlhome_RequestStatus_msg;
 #define controlhome_ControllerConfig_size        498
 #define controlhome_DigitalPin_size              8
 #define controlhome_Envelope_size                702
-#define controlhome_Heartbeat_size               11
+#define controlhome_FirmwareUpdate_size          235
+#define controlhome_Heartbeat_size               44
 #define controlhome_IoReport_size                680
 #define controlhome_PinConfig_size               10
-#define controlhome_RegisterController_size      394
+#define controlhome_RegisterController_size      427
 #define controlhome_ReplaceController_size       52
 #define controlhome_RequestStatus_size           0
 #define controlhome_Rfid_size                    39

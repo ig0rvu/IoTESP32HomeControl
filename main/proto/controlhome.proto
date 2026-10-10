@@ -20,11 +20,13 @@ message Envelope {
     ControllerConfig controller_config =8;
     Rfid rfid_tag = 9;
     RequestStatus request_status = 10;
+    FirmwareUpdate firmware_update = 11;
   }
 }
 
 message Heartbeat {
   uint64 uptime_ms = 1;
+  string firmware_version = 2;
 }
 
 enum PinDirection {
@@ -51,11 +53,15 @@ message PinConfig {
   PinFunction function = 3;
 }
 
-// Sent once by a controller that the server does not yet recognize by mac_address.
+// Sent once by a controller that the server does not yet recognize by mac_address,
+// and again on every reconnect for an already-known one (tolerated as a 409 by
+// the server) -- so firmware_version rides along on every connection, giving the
+// server a chance to notice a stale version and push a FirmwareUpdate back.
 message RegisterController {
   string id =  1;
   string description = 2;
   repeated PinConfig pins = 3;
+  string firmware_version = 4;
 }
 
 message DigitalPin {
@@ -113,4 +119,15 @@ message Rfid
 // the next pin-change or the slow Heartbeat fallback. Empty -- it's a signal,
 // not data.
 message RequestStatus {
+}
+
+// Server -> controller: a newer firmware build is available. url is a plain
+// HTTP path on the same server the device already talks to (e.g.
+// /api/firmware/download/esp32/1.2.0); sha256 is advisory for now (esp_https_ota's
+// own image-header validation is what actually guards against a bad flash).
+message FirmwareUpdate {
+  string version = 1;
+  string url = 2;
+  string sha256 = 3;
+  uint32 port = 4;
 }
