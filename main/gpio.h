@@ -40,11 +40,15 @@ typedef enum{
     GPIO_PIN_FUNC_OTHER 
 }gpio_pin_function_t;
 
-typedef struct 
+typedef struct
 {
     uint32_t gpio;
     gpio_pin_direction_t direction;
     gpio_pin_function_t function;
+    // Level an OUT pin is driven to at init. Relays on these boards are
+    // active-low, so true (idle/off) is the safe default. Ignored for
+    // non-OUT pins.
+    bool initial_state;
 } gpio_pin_config_t ;
 
 typedef struct 

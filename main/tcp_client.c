@@ -80,7 +80,23 @@ static size_t parse_pins_string(const char *pins_str, controlhome_PinConfig *out
         if (colon != NULL) {
             *colon = '\0';
             out[count].gpio = (uint32_t)atoi(token);
-            const char *func_str = colon + 1;
+            char *func_str = colon + 1;
+
+            // Optional 3rd ":"-segment is the OUT-pin initial level ("0"/"1"), optional
+            // 4th is a logical pin name (e.g. "reflektor") an installer typed in AP mode.
+            // Both absent on strings saved before these fields existed -- default to
+            // initial_state=1 (idle/off for the active-low relays these boards drive)
+            // and an empty name (server auto-generates one as before).
+            out[count].initial_state = true;
+            out[count].name[0] = '\0';
+            char *second_colon = strchr(func_str, ':');
+            if (second_colon != NULL) {
+                *second_colon = '\0';
+                out[count].initial_state = (second_colon[1] == '1');
+                if (second_colon[2] == ':') {
+                    safe_strcpy(out[count].name, sizeof(out[count].name), second_colon + 3);
+                }
+            }
 
             if (strcmp(func_str, "GPIO_IN") == 0) {
                 out[count].direction = controlhome_PinDirection_PIN_DIRECTION_IN;
@@ -139,7 +155,14 @@ static void build_pins_string(const controlhome_PinConfig *pins, size_t count, c
                 func_str = "GPIO_IN";
             }
         }
-        int written = snprintf(out + pos, out_size - pos, "%s%u:%s", (i > 0 ? "," : ""), (unsigned)pins[i].gpio, func_str);
+        int written;
+        if (pins[i].name[0] != '\0') {
+            written = snprintf(out + pos, out_size - pos, "%s%u:%s:%d:%s", (i > 0 ? "," : ""),
+                                (unsigned)pins[i].gpio, func_str, pins[i].initial_state ? 1 : 0, pins[i].name);
+        } else {
+            written = snprintf(out + pos, out_size - pos, "%s%u:%s:%d", (i > 0 ? "," : ""),
+                                (unsigned)pins[i].gpio, func_str, pins[i].initial_state ? 1 : 0);
+        }
         if (written > 0 && (size_t)written < out_size - pos) {
             pos += (size_t)written;
         }
@@ -311,6 +334,41 @@ static controlhome_IoReport build_ioreport(void)
 }
 
 
+// Saves a server-provided pin list to NVS and re-runs gpio_ctrl_init() with it
+// immediately. Shared by the ReplaceController handshake (device_task) and an
+// unsolicited ChangePinConfig push (command_task) -- same "new config just
+// arrived" handling either way.
+static void apply_and_save_pin_config(const controlhome_PinConfig *pins, size_t pins_count)
+{
+    char new_pins_str[512];
+    build_pins_string(pins, pins_count, new_pins_str, sizeof(new_pins_str));
+
+    nvs_handle_t h;
+    if (nvs_open(WIFI_NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_str(h, NVS_KEY_PINS, new_pins_str);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+
+    gpio_pin_list_t live_cfg;
+    gpio_pin_list_from_string(new_pins_str, &live_cfg);
+    gpio_ctrl_init(&live_cfg);
+
+    // gpio_ctrl_init() only (re)configures IN/OUT pins -- RFID_RX is its own
+    // UART-owned pin, so it needs its own live-apply call here. rfid_reinit()
+    // no-ops if the RFID pin didn't actually change.
+    uint32_t new_rfid_pin = 0;
+    for (size_t i = 0; i < pins_count; i++) {
+        if (pins[i].function == controlhome_PinFunction_PIN_FUNCTION_UART) {
+            new_rfid_pin = pins[i].gpio;
+            break;
+        }
+    }
+    rfid_reinit(new_rfid_pin);
+
+    ESP_LOGI(TAG, "Pin config saved and applied: %u pin(s)", (unsigned)pins_count);
+}
+
 // Owns ALL reading from the socket for the lifetime of one connection. Handles
 // Ack (just logs it) and Command (executes it, then sends back a confirmation
 // Ack so the server can log what was actually done). On any read error, marks
@@ -345,9 +403,11 @@ static void command_task(void *pvParameters)
                 gpio_ctrl_set_output(gpio, !current_value);
             } else if(strcmp(action, "pb") == 0) {
                 uint32_t pulse_duration = duration > 0 ? duration : 2000; // default to 2 seconds if duration is 0            
-                gpio_ctrl_set_output(gpio, true);
+                bool current_value = gpio_ctrl_read(gpio);
+                gpio_ctrl_set_output(gpio, !current_value);
                 vTaskDelay(pdMS_TO_TICKS(pulse_duration));
-                gpio_ctrl_set_output(gpio, false);
+                current_value = gpio_ctrl_read(gpio);   
+                gpio_ctrl_set_output(gpio, !current_value);
             } else {
                 ESP_LOGW(TAG, "Unknown action: %s", action);
             }
@@ -403,6 +463,11 @@ static void command_task(void *pvParameters)
                 // read timeout / other server traffic on this connection).
                 ota_start_update(full_url);
             }
+        } else if (response.which_payload == controlhome_Envelope_change_pin_config_tag) {
+            ESP_LOGI(TAG, "ChangePinConfig received: %u pin(s)",
+                     (unsigned)response.payload.change_pin_config.pins_count);
+            apply_and_save_pin_config(response.payload.change_pin_config.pins,
+                                       response.payload.change_pin_config.pins_count);
         } else {
             ESP_LOGW(TAG, "command_task: unexpected payload case %d", (int)response.which_payload);
         }
@@ -484,22 +549,7 @@ void device_task(void *pvParameters)
                 for (size_t i = 0; i < pins_count && i < MAX_REGISTER_PINS; i++) {
                     pins[i] = config.pins[i];
                 }
-
-                char new_pins_str[512];
-                build_pins_string(pins, pins_count, new_pins_str, sizeof(new_pins_str));
-
-                nvs_handle_t h;
-                if (nvs_open(WIFI_NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
-                    nvs_set_str(h, NVS_KEY_PINS, new_pins_str);
-                    nvs_commit(h);
-                    nvs_close(h);
-                }
-
-                gpio_pin_list_t live_cfg;
-                gpio_pin_list_from_string(new_pins_str, &live_cfg);
-                gpio_ctrl_init(&live_cfg);
-
-                ESP_LOGI(TAG, "ReplaceController: saved and applied %u pin(s)", (unsigned)pins_count);
+                apply_and_save_pin_config(pins, pins_count);
             }
         } else {
             registered = register_controller(sock, mac_str, ctrl_id, ctrl_desc, pins, pins_count);
@@ -542,7 +592,12 @@ void device_task(void *pvParameters)
         };
         safe_strcpy(ctx.mac, sizeof(ctx.mac), mac_str);
         s_active_connection = &ctx;
-        xTaskCreate(command_task, "command_task", 4096, &ctx, 5, NULL);
+        // 8192, not 4096: command_task now also handles ChangePinConfig via
+        // apply_and_save_pin_config(), which stacks a 512-byte pins string buffer
+        // on top of another one inside gpio_pin_list_from_string() plus a
+        // MAX_GPIO_PINS-sized gpio_pin_list_t -- that overflowed the old 4096
+        // budget (sized back when this task only did simple Command dispatch).
+        xTaskCreate(command_task, "command_task", 8192, &ctx, 5, NULL);
 
         // Baseline IoReport right after (re)connecting, so the server has a fresh
         // snapshot before settling into on-change-only reporting.

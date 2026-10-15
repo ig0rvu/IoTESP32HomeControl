@@ -12,8 +12,12 @@ static bool s_isr_service_installed = false;
   uint32_t gpio_in_pins[MAX_GPIO_PINS];
   uint32_t gpio_out_pins[MAX_GPIO_PINS];
 
-  size_t gpio_in_pin_count = 0; 
+  size_t gpio_in_pin_count = 0;
   size_t gpio_out_pin_count = 0;
+
+// Parallel to gpio_out_pins[] (same index) -- the level each OUT pin should
+// idle at, from gpio_pin_config_t.initial_state.
+static bool s_gpio_out_initial[MAX_GPIO_PINS];
 
 void gpio_ctrl_notify_task(TaskHandle_t task)
 {
@@ -31,11 +35,28 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 }
 void gpio_ctrl_init(const gpio_pin_list_t *config)
 {
+    // Drop ISR handlers from whatever was classified IN/OUT by the *previous*
+    // call before rebuilding the lists below -- otherwise a pin that gets
+    // reclassified away from IN/OUT (e.g. repurposed to UART for RFID) keeps a
+    // stale interrupt handler firing on every electrical edge that pin sees
+    // from then on, including every UART bit transition, flooding IoReport
+    // sends on every RFID read. No-op on the very first call (nothing
+    // registered yet).
+    if (s_isr_service_installed) {
+        for (size_t i = 0; i < gpio_in_pin_count; i++) {
+            gpio_isr_handler_remove(gpio_in_pins[i]);
+        }
+        for (size_t i = 0; i < gpio_out_pin_count; i++) {
+            gpio_isr_handler_remove(gpio_out_pins[i]);
+        }
+    }
+
     gpio_in_pin_count = 0;
     gpio_out_pin_count = 0;
- 
+
     for (size_t i = 0; i < config->pin_count; i++) {
         if (config->pins[i].direction == GPIO_DIRECTION_OUT) {
+            s_gpio_out_initial[gpio_out_pin_count] = config->pins[i].initial_state;
             gpio_out_pins[gpio_out_pin_count++] = config->pins[i].gpio;
         } else if (config->pins[i].direction == GPIO_DIRECTION_IN) {
             gpio_in_pins[gpio_in_pin_count++] = config->pins[i].gpio;
@@ -58,7 +79,7 @@ void gpio_ctrl_init(const gpio_pin_list_t *config)
         gpio_config(&out_conf);
     }
     for (size_t i = 0; i < gpio_out_pin_count; i++) {
-        gpio_set_level(gpio_out_pins[i], 0);
+        gpio_set_level(gpio_out_pins[i], s_gpio_out_initial[i] ? 1 : 0);
     }
 
     uint64_t in_mask = 0;
@@ -76,7 +97,7 @@ void gpio_ctrl_init(const gpio_pin_list_t *config)
     if (in_mask != 0) {
         gpio_config(&in_conf);
     }
-    ESP_LOGI(TAG, "GPIO initialized: %d output(s), %d input(s) with interrupt", (int)gpio_out_pin_count, (int)gpio_in_pin_count);
+    ESP_LOGI(TAG, "GPIO initialized: %d output(s), %d input(s), interrupt configured for both", (int)gpio_out_pin_count, (int)gpio_in_pin_count);
     if (!s_isr_service_installed) {
         gpio_install_isr_service(0);
         s_isr_service_installed = true;
@@ -106,7 +127,17 @@ bool gpio_pin_list_from_string(const char *pins_str, gpio_pin_list_t *out)
         if (colon != NULL) {
             *colon = '\0';
             uint32_t gpio = (uint32_t)atoi(token);
-            const char *func_str = colon + 1;
+            char *func_str = colon + 1;
+
+            // Optional 3rd ":"-segment is the OUT-pin initial level ("0"/"1").
+            // Absent on strings saved before this field existed -- default to
+            // 1 (idle/off for the active-low relays these boards drive).
+            bool initial_state = true;
+            char *second_colon = strchr(func_str, ':');
+            if (second_colon != NULL) {
+                *second_colon = '\0';
+                initial_state = (second_colon[1] == '1');
+            }
 
             gpio_pin_direction_t direction = GPIO_DIRECTION_IN;
             gpio_pin_function_t function = GPIO_PIN_FUNC_GPIO;
@@ -133,6 +164,7 @@ bool gpio_pin_list_from_string(const char *pins_str, gpio_pin_list_t *out)
             out->pins[out->pin_count].gpio = gpio;
             out->pins[out->pin_count].direction = direction;
             out->pins[out->pin_count].function = function;
+            out->pins[out->pin_count].initial_state = initial_state;
             out->pin_count++;
         }
         token = strtok(NULL, ",");

@@ -21,6 +21,7 @@ message Envelope {
     Rfid rfid_tag = 9;
     RequestStatus request_status = 10;
     FirmwareUpdate firmware_update = 11;
+    ChangePinConfig change_pin_config = 12;
   }
 }
 
@@ -51,6 +52,16 @@ message PinConfig {
   uint32 gpio = 1;
   PinDirection direction = 2;
   PinFunction function = 3;
+  // Level an OUT pin is driven to at boot / on config apply. Relays on these
+  // boards are active-low, so true (1) is idle/off -- that's the safe default
+  // when a device's stored config predates this field. Meaningless for
+  // directions other than OUT.
+  bool initial_state = 4;
+  // Optional logical name (e.g. "reflektor") an installer can type in AP mode
+  // instead of the server's auto-generated "<idcontroller>_GPIO<n>" PK. Empty --
+  // including on every device predating this field -- means the server keeps
+  // auto-generating as before.
+  string name = 5;
 }
 
 // Sent once by a controller that the server does not yet recognize by mac_address,
@@ -130,4 +141,12 @@ message FirmwareUpdate {
   string url = 2;
   string sha256 = 3;
   uint32 port = 4;
+}
+
+// Server -> controller: admin changed this controller's pin config from the
+// dashboard (PinConfig.razor) instead of physically re-provisioning via AP
+// mode. Device saves the new list to NVS and re-runs gpio_ctrl_init()
+// immediately, same as it would after a ReplaceController handshake.
+message ChangePinConfig {
+  repeated PinConfig pins = 1;
 }

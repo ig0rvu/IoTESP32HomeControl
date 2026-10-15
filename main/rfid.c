@@ -21,6 +21,7 @@
 const char *TAG = "rfid";
 
 static uint32_t s_rfid_rx_pin = 0;
+static TaskHandle_t s_rfid_task_handle = NULL;
 
 uint32_t rfid_get_rx_pin(void)
 {
@@ -42,9 +43,17 @@ static uint32_t find_rfid_pin_from_nvs(void)
     char *token = strtok(pins_str, ",");
     while (token != NULL) {
         char *colon = strchr(token, ':');
-        if (colon != NULL && strcmp(colon + 1, "RFID_RX") == 0) {
-            *colon = '\0';
-            return (uint32_t)atoi(token);
+        if (colon != NULL) {
+            char *func_str = colon + 1;
+            // "RFID_RX" exactly, or "RFID_RX:" followed by optional initial_state/name
+            // segments -- not a plain strcmp, since those segments can now be present
+            // on any pin, not just OUT ones.
+            size_t func_len = strlen("RFID_RX");
+            if (strncmp(func_str, "RFID_RX", func_len) == 0 &&
+                (func_str[func_len] == '\0' || func_str[func_len] == ':')) {
+                *colon = '\0';
+                return (uint32_t)atoi(token);
+            }
         }
         token = strtok(NULL, ",");
     }
@@ -126,14 +135,11 @@ static bool validate_and_extract(const uint8_t *frame, char *tag_id_out, size_t 
     return true;
 }
 
-void rfid_task(void *pvParameters)
+// s_rfid_rx_pin is set by the caller (rfid_init/rfid_reinit) before this task
+// is created -- always non-zero by the time it runs, so unlike before, this
+// never needs to self-exit for lack of a configured pin.
+static void rfid_task(void *pvParameters)
 {
-    s_rfid_rx_pin = find_rfid_pin_from_nvs();
-    if (s_rfid_rx_pin == 0) {
-        ESP_LOGW(TAG, "No RFID_RX pin configured, rfid_task exiting");
-        vTaskDelete(NULL);
-        return;
-    }
     ESP_LOGI(TAG, "RFID reader active on gpio=%u", (unsigned)s_rfid_rx_pin);
 
     rfid_uart_init(s_rfid_rx_pin);
@@ -188,4 +194,48 @@ void rfid_task(void *pvParameters)
             frame_pos = 0;
         }
     }
+}
+
+void rfid_init(void)
+{
+    uint32_t pin = find_rfid_pin_from_nvs();
+    if (pin == 0) {
+        ESP_LOGW(TAG, "No RFID_RX pin configured, not starting rfid_task");
+        return;
+    }
+    s_rfid_rx_pin = pin;
+    xTaskCreate(rfid_task, "rfid_task", 8192, NULL, 5, &s_rfid_task_handle);
+}
+
+void rfid_reinit(uint32_t new_pin)
+{
+    if (new_pin == s_rfid_rx_pin) {
+        return;
+    }
+
+    if (new_pin == 0) {
+        // RFID_RX removed from the config entirely.
+        if (s_rfid_task_handle != NULL) {
+            vTaskDelete(s_rfid_task_handle);
+            s_rfid_task_handle = NULL;
+            uart_driver_delete(RFID_UART_NUM);
+        }
+        s_rfid_rx_pin = 0;
+        ESP_LOGI(TAG, "RFID reader disabled (no RFID_RX pin configured)");
+        return;
+    }
+
+    if (s_rfid_task_handle != NULL) {
+        // Already running -- repoint the existing UART driver at the new pin
+        // instead of tearing down and recreating the task.
+        uart_set_pin(RFID_UART_NUM, UART_PIN_NO_CHANGE, new_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+        s_rfid_rx_pin = new_pin;
+        ESP_LOGI(TAG, "RFID reader moved to gpio=%u", (unsigned)new_pin);
+        return;
+    }
+
+    // Wasn't running (no RFID_RX pin existed before this change) -- start it now.
+    s_rfid_rx_pin = new_pin;
+    ESP_LOGI(TAG, "RFID_RX pin newly configured, starting rfid_task on gpio=%u", (unsigned)new_pin);
+    xTaskCreate(rfid_task, "rfid_task", 8192, NULL, 5, &s_rfid_task_handle);
 }

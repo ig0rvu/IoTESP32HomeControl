@@ -16,3 +16,5 @@ controlhome.Rfid.tag_id max_size:32
 controlhome.FirmwareUpdate.version max_size:32
 controlhome.FirmwareUpdate.url max_size:128
 controlhome.FirmwareUpdate.sha256 max_size:65
+controlhome.ChangePinConfig.pins max_count:20
+controlhome.PinConfig.name max_size:50

@@ -48,6 +48,9 @@ PB_BIND(controlhome_RequestStatus, controlhome_RequestStatus, AUTO)
 PB_BIND(controlhome_FirmwareUpdate, controlhome_FirmwareUpdate, AUTO)
 
 
+PB_BIND(controlhome_ChangePinConfig, controlhome_ChangePinConfig, 2)
+
+
 
 
 

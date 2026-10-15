@@ -44,6 +44,11 @@ void app_main(void)
     gpio_pin_list_t cfg;
     load_pins_from_nvs(&cfg);
     gpio_ctrl_init(&cfg);
-    xTaskCreate(device_task, "device_task", 8192, NULL, 5, NULL);
-    xTaskCreate(rfid_task, "rfid_task", 8192, NULL, 5, NULL);
+    // 16384, not 8192: register_controller()/replace_controller() each hold two full
+    // controlhome_Envelope locals on the stack, and that struct (sized to its largest
+    // oneof variant, RegisterController.pins[20]) grew by roughly 1KB once PinConfig
+    // gained a 50-byte name[] field -- 8192 was enough before that, not after (crashed
+    // deep in lwIP/FreeRTOS internals the moment register_controller() called send()).
+    xTaskCreate(device_task, "device_task", 16384, NULL, 5, NULL);
+    rfid_init();
 }

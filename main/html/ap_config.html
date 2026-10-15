@@ -27,7 +27,7 @@
             <h3>Konfiguracija pinova</h3>
             <table>
                 <thead>
-                    <tr><th>Pin</th><th>Funkcija</th></tr>
+                    <tr><th>Pin</th><th>Funkcija</th><th>Pocetno stanje</th><th>Naziv (opciono)</th></tr>
                 </thead>
                 <tbody id="pinsContainer"></tbody>
             </table>
@@ -85,6 +85,39 @@ function loadPins()
         selectCell.appendChild(select);
         row.appendChild(selectCell);
 
+        var initialCell = document.createElement('td');
+        var initialSelect = document.createElement('select');
+        initialSelect.setAttribute('data-initial-for', pin.pin);
+        initialSelect.style.display = 'none';
+
+        var offOption = document.createElement('option');
+        offOption.value = '1';
+        offOption.textContent = 'Van pogona (1)';
+        initialSelect.appendChild(offOption);
+
+        var onOption = document.createElement('option');
+        onOption.value = '0';
+        onOption.textContent = 'U pogonu (0)';
+        initialSelect.appendChild(onOption);
+
+        initialCell.appendChild(initialSelect);
+        row.appendChild(initialCell);
+
+        var nameCell = document.createElement('td');
+        var nameInput = document.createElement('input');
+        nameInput.setAttribute('type', 'text');
+        nameInput.setAttribute('data-name-for', pin.pin);
+        nameInput.setAttribute('placeholder', 'npr. reflektor');
+        nameInput.style.display = 'none';
+        nameCell.appendChild(nameInput);
+        row.appendChild(nameCell);
+
+        select.addEventListener('change', function() {
+            var used = select.value !== '';
+            initialSelect.style.display = (select.value === 'GPIO_OUT') ? 'inline' : 'none';
+            nameInput.style.display = used ? 'inline' : 'none';
+        });
+
         container.appendChild(row);
     });
 });
@@ -115,13 +148,39 @@ document.getElementById('configForm').addEventListener('submit', function(ev) {
             return;
         }
 
-        var selects = document.querySelectorAll('#pinsContainer select');
+        var rows = document.querySelectorAll('#pinsContainer tr');
         var parts = [];
-        selects.forEach(function(sel) {
+        var nameError = null;
+        rows.forEach(function(row) {
+            var sel = row.querySelector('select[data-pin]');
             if (sel.value !== '') {
-                parts.push(sel.getAttribute('data-pin') + ':' + sel.value);
+                var nameInput = row.querySelector('input[data-name-for]');
+                var name = nameInput.value.trim();
+                if (name !== '' && !/^[A-Za-z0-9_]+$/.test(name)) {
+                    nameError = 'Naziv pina "' + name + '" sme da sadrži samo slova, brojeve i donju crtu (bez razmaka, dvotačke, zareza).';
+                }
+
+                var part = sel.getAttribute('data-pin') + ':' + sel.value;
+                // The initial_state digit is positionally required before a name --
+                // emit it even for a non-OUT pin (where it's otherwise meaningless and
+                // ignored) whenever a name is present, so parsing stays unambiguous.
+                if (sel.value === 'GPIO_OUT') {
+                    var initialSelect = row.querySelector('select[data-initial-for]');
+                    part += ':' + initialSelect.value;
+                } else if (name !== '') {
+                    part += ':1';
+                }
+                if (name !== '') {
+                    part += ':' + name;
+                }
+                parts.push(part);
             }
         });
+        if (nameError) {
+            ev.preventDefault();
+            alert(nameError);
+            return;
+        }
         document.getElementById('pins').value = parts.join(',');
     } else if (mode === 'replace') {
         var replaceId = document.getElementById('replace_id').value.trim();
